@@ -5,7 +5,7 @@ import {
   fetchPatients,
   updatePatient,
 } from '../api/patients.js'
-import { PATIENTS_API_BASE } from '../config.js'
+import { PATIENTS_API_BASE as defaultApiBase } from '../config.js'
 import { PatientForm } from './PatientForm.jsx'
 import {
   emptyPatientForm,
@@ -25,7 +25,12 @@ function formatDate(value) {
   return d.toLocaleDateString('ko-KR')
 }
 
-export function PatientCheckupApp() {
+export function PatientCheckupApp({
+  apiBase,
+  dbInfoUrl,
+  dbInfo,
+  dbInfoError,
+} = {}) {
   const [patients, setPatients] = useState([])
   const [total, setTotal] = useState(0)
   const [dbTotal, setDbTotal] = useState(0)
@@ -53,6 +58,9 @@ export function PatientCheckupApp() {
 
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
+
+  const api = apiBase ?? defaultApiBase
+  const resolvedDbInfoUrl = dbInfoUrl ?? `${api}/db-info`
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -187,16 +195,43 @@ export function PatientCheckupApp() {
     <div className="checkup-app">
       <header className="checkup-header">
         <div>
-          <h1>환자 체크업</h1>
+          <h1>환자 관리</h1>
           <p className="checkup-sub">
-            등록·수정·삭제는 백엔드{' '}
-            <code className="inline-code">{PATIENTS_API_BASE}</code> 와 연동됩니다.
+            환자 정보를 등록·수정·삭제합니다. API:{' '}
+            <code className="inline-code">{api}</code>
           </p>
         </div>
         <button type="button" className="btn primary" onClick={openCreate}>
           환자 등록
         </button>
       </header>
+
+      {dbInfoError ? (
+        <div className="banner error" role="alert">
+          DB 연결 정보: {dbInfoError}
+        </div>
+      ) : null}
+
+      {dbInfo ? (
+        <div className="banner info" role="status">
+          <p className="db-info-line">
+            <strong>{dbInfo.database ?? '—'}</strong> · 컬렉션{' '}
+            {dbInfo.collection ?? 'patients'} · 문서{' '}
+            <strong>{dbInfo.documentCount ?? 0}</strong>건
+            {dbInfo.isAtlas ? ' · MongoDB Atlas' : null}
+            {' · '}
+            <a
+              className="db-info-link"
+              href={resolvedDbInfoUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              db-info (JSON)
+            </a>
+          </p>
+          {dbInfo.hint ? <p className="db-hint">{dbInfo.hint}</p> : null}
+        </div>
+      ) : null}
 
       {actionError ? (
         <div className="banner error" role="alert">

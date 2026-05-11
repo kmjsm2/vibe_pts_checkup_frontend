@@ -1,4 +1,4 @@
-import { PATIENTS_API_BASE } from '../config.js'
+import { PATIENTS_API_BASE, PATIENTS_DB_INFO_URL } from '../config.js'
 
 async function parseError(res) {
   try {
@@ -24,6 +24,12 @@ function buildQuery(params) {
   if (t(params.recordSource)) q.set('recordSource', t(params.recordSource))
   const qs = q.toString()
   return qs ? `?${qs}` : ''
+}
+
+export async function fetchPatientsDbInfo() {
+  const res = await fetch(PATIENTS_DB_INFO_URL)
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
 }
 
 export async function fetchPatients(params = {}) {

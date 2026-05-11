@@ -48,6 +48,38 @@
   color: var(--text-h);
 }
 
+.banner.info {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  border: 1px solid var(--accent-border);
+  color: var(--text-h);
+}
+
+.db-info-line {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.db-info-line:last-child {
+  margin-bottom: 0;
+}
+
+.db-hint {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+a.db-info-link {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+a.db-info-link:hover {
+  text-decoration: underline;
+}
+
 .filters {
   display: flex;
   flex-wrap: wrap;
