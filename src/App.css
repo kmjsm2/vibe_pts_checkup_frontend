@@ -30,6 +30,14 @@
   max-width: 52rem;
 }
 
+.network-hint {
+  margin-top: 10px;
+  max-width: 52rem;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
 .env-badge {
   display: inline-block;
   font-size: 12px;

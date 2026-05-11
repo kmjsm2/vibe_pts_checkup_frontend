@@ -220,6 +220,18 @@ export function PatientCheckupApp({
                 : '— (미설정 → ' + (deployedFallback ?? defaultApiBase) + ')'}
             </code>
           </p>
+          <p className="checkup-sub network-hint">
+            개발 서버에서는 <code className="inline-code">@vite/client</code>·
+            <code className="inline-code">*.jsx</code> 등이{' '}
+            <code className="inline-code">localhost:5173</code>에서 오는 것이
+            정상입니다. 환자 API는 목록에서{' '}
+            <code className="inline-code">patients</code>·
+            <code className="inline-code">db-info</code>를 선택한 뒤 Headers의{' '}
+            <strong>Request URL</strong>이 위 주소(https…)인지 확인하세요.
+            <code className="inline-code">VITE_PATIENTS_API_BASE=/api/…</code>
+            처럼 상대 경로만 두면(프록시 없이) 요청이 전부 그 호스트(localhost)로
+            붙습니다.
+          </p>
         </div>
         <button type="button" className="btn primary" onClick={openCreate}>
           환자 등록
