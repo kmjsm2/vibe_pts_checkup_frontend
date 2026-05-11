@@ -30,6 +30,9 @@ export function PatientCheckupApp({
   dbInfoUrl,
   dbInfo,
   dbInfoError,
+  apiEnvRaw,
+  apiUsesDotEnv,
+  deployedFallback,
 } = {}) {
   const [patients, setPatients] = useState([])
   const [total, setTotal] = useState(0)
@@ -197,8 +200,25 @@ export function PatientCheckupApp({
         <div>
           <h1>환자 관리</h1>
           <p className="checkup-sub">
-            환자 정보를 등록·수정·삭제합니다. API:{' '}
+            환자 정보를 등록·수정·삭제합니다. 실제 요청 URL:{' '}
             <code className="inline-code">{api}</code>
+          </p>
+          <p className="checkup-sub checkup-env-line">
+            <span
+              className={
+                apiUsesDotEnv ? 'env-badge env-badge-on' : 'env-badge env-badge-off'
+              }
+            >
+              {apiUsesDotEnv ? '.env 적용' : '기본 배포 URL'}
+            </span>
+            {' · '}
+            <code className="inline-code">VITE_PATIENTS_API_BASE</code>
+            {': '}
+            <code className="inline-code">
+              {typeof apiEnvRaw === 'string' && apiEnvRaw.trim()
+                ? apiEnvRaw.trim()
+                : '— (미설정 → ' + (deployedFallback ?? defaultApiBase) + ')'}
+            </code>
           </p>
         </div>
         <button type="button" className="btn primary" onClick={openCreate}>

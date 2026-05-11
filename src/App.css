@@ -25,6 +25,33 @@
   max-width: 42rem;
 }
 
+.checkup-env-line {
+  margin-top: 8px;
+  max-width: 52rem;
+}
+
+.env-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+
+.env-badge-on {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  border: 1px solid var(--accent-border);
+  color: var(--text-h);
+}
+
+.env-badge-off {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
 .inline-code {
   font-family: var(--mono);
   font-size: 14px;
