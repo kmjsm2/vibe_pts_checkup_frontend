@@ -8,7 +8,6 @@ import {
   fetchPatients,
   updatePatient,
 } from '../api/patients.js'
-import { useAuth } from '../hooks/useAuth.js'
 import { PATIENTS_API_BASE as defaultApiBase } from '../config.js'
 import { PatientForm } from './PatientForm.jsx'
 import {
@@ -77,8 +76,6 @@ export function PatientCheckupApp({
 
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
-
-  const { logout } = useAuth()
 
   const [aiPatient, setAiPatient] = useState(null)
   const [aiSymptoms, setAiSymptoms] = useState('')
@@ -310,9 +307,6 @@ export function PatientCheckupApp({
           </p>
         </div>
         <div className="checkup-header-actions">
-          <button type="button" className="btn ghost" onClick={logout}>
-            로그아웃
-          </button>
           <button type="button" className="btn primary" onClick={openCreate}>
             환자 등록
           </button>

@@ -38,3 +38,6 @@ export const DEPLOYED_PATIENTS_API_BASE = `${PROD_DEFAULT_API_BASE}/api/patients
 /** 인증 (절대 URL로 고정 — 배포 시 상대 경로로 Vercel에 붙는 문제 방지). */
 export const AUTH_LOGIN_URL = `${API_BASE}/api/auth/login`
 export const AUTH_REGISTER_URL = `${API_BASE}/api/auth/register`
+
+/** 대시보드 통계 (`GET /api/stats`). */
+export const STATS_API_URL = `${API_BASE}/api/stats`

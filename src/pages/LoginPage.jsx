@@ -54,7 +54,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="login-page">
+    <div className="login-page clinical-login-dark">
       <div className="login-card">
         <h1 className="login-title">{mode === 'login' ? '로그인' : '회원가입'}</h1>
         <p className="login-lead">

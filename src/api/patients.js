@@ -1,5 +1,6 @@
 import { PATIENTS_API_BASE, PATIENTS_DB_INFO_URL } from '../config.js'
 import { authFetch } from './http.js'
+import { normalizePatientDocument } from '../utils/patientFields.js'
 
 async function parseError(res) {
   try {
@@ -10,6 +11,74 @@ async function parseError(res) {
   } catch {
     return res.statusText || '요청에 실패했습니다.'
   }
+}
+
+/**
+ * 백엔드마다 목록 필드명이 다를 수 있어 단일 형태로 맞춥니다.
+ * (`patients`, `data`, `items`, `docs`, `results` 등)
+ */
+export function normalizePatientsListResponse(body) {
+  if (body == null) {
+    return { patients: [], total: 0, dbTotal: 0 }
+  }
+  if (Array.isArray(body)) {
+    return {
+      patients: body.map((row) => normalizePatientDocument(row)),
+      total: body.length,
+      dbTotal: body.length,
+    }
+  }
+  if (typeof body !== 'object') {
+    return { patients: [], total: 0, dbTotal: 0 }
+  }
+
+  /* { data: { patients: [...] } } 형태 */
+  if (body.data && typeof body.data === 'object' && !Array.isArray(body.data)) {
+    const d = body.data
+    const inner =
+      d.patients ??
+      d.list ??
+      d.items ??
+      d.docs ??
+      d.results ??
+      d.records
+    if (Array.isArray(inner)) {
+      return {
+        patients: inner.map((row) => normalizePatientDocument(row)),
+        total: Number(body.total ?? d.total ?? inner.length) || 0,
+        dbTotal:
+          Number(body.dbTotal ?? d.dbTotal ?? d.totalDocuments ?? inner.length) || 0,
+      }
+    }
+  }
+
+  const raw =
+    body.patients ??
+    body.list ??
+    body.rows ??
+    body.result ??
+    body.data ??
+    body.items ??
+    body.docs ??
+    body.results ??
+    body.records ??
+    (Array.isArray(body.payload) ? body.payload : null)
+
+  const patients = Array.isArray(raw)
+    ? raw.map((row) => normalizePatientDocument(row))
+    : []
+
+  const total = Number(body.total ?? body.count ?? patients.length) || 0
+  const dbTotal =
+    Number(
+      body.dbTotal ??
+        body.totalDocuments ??
+        body.dbCount ??
+        body.totalCount ??
+        total,
+    ) || 0
+
+  return { patients, total, dbTotal }
 }
 
 function buildQuery(params) {
@@ -36,13 +105,19 @@ export async function fetchPatientsDbInfo() {
 export async function fetchPatients(params = {}) {
   const res = await authFetch(`${PATIENTS_API_BASE}${buildQuery(params)}`)
   if (!res.ok) throw new Error(await parseError(res))
-  return res.json()
+  const body = await res.json()
+  return normalizePatientsListResponse(body)
 }
 
 export async function fetchPatient(id) {
   const res = await authFetch(`${PATIENTS_API_BASE}/${id}`)
   if (!res.ok) throw new Error(await parseError(res))
-  return res.json()
+  const body = await res.json()
+  const doc =
+    body && typeof body === 'object' && body.data && typeof body.data === 'object'
+      ? body.data
+      : body
+  return normalizePatientDocument(doc)
 }
 
 export async function createPatient(body) {
