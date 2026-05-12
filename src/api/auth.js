@@ -1,15 +1,10 @@
-import { API_BASE } from '../config.js'
+import { AUTH_LOGIN_URL, AUTH_REGISTER_URL } from '../config.js'
 
-function authUrls() {
-  const base = String(API_BASE ?? '').trim().replace(/\/$/, '')
-  if (!base) {
+function assertHttpsUrl(url, label) {
+  if (!/^https?:\/\//i.test(String(url))) {
     throw new Error(
-      'API 베이스 URL이 비어 있습니다. `VITE_API_BASE` 또는 config 기본값을 확인하세요.',
+      `${label}이(가) http(s) 절대 URL이 아닙니다. VITE_API_BASE와 빌드 로그를 확인하세요. 현재: ${JSON.stringify(url)}`,
     )
-  }
-  return {
-    login: `${base}/api/auth/login`,
-    register: `${base}/api/auth/register`,
   }
 }
 
@@ -34,9 +29,17 @@ function messageFromJson(j, fallback) {
   return fallback
 }
 
+export function getAuthRegisterUrl() {
+  return AUTH_REGISTER_URL
+}
+
+export function getAuthLoginUrl() {
+  return AUTH_LOGIN_URL
+}
+
 export async function loginRequest(email, password) {
-  const { login } = authUrls()
-  const res = await fetch(login, {
+  assertHttpsUrl(AUTH_LOGIN_URL, '로그인 URL')
+  const res = await fetch(AUTH_LOGIN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -58,8 +61,8 @@ export async function loginRequest(email, password) {
 }
 
 export async function registerRequest(email, password, name) {
-  const { register } = authUrls()
-  const res = await fetch(register, {
+  assertHttpsUrl(AUTH_REGISTER_URL, '회원가입 URL')
+  const res = await fetch(AUTH_REGISTER_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password, name }),

@@ -1,42 +1,40 @@
-/** 개발 모드에서 `VITE_API_BASE`가 비었을 때 사용 (끝 슬래시 없음). */
+/* global __VITE_API_BASE_RESOLVED__, __VITE_API_BASE_RAW__, __VITE_API_BASE_FROM_ENV__ */
+
+/** 개발 시 `.env`에 비어 있을 때 (vite `mode === 'development'`). */
 export const DEV_DEFAULT_API_BASE = 'http://localhost:5000'
 
-/** 프로덕션 빌드에서 `VITE_API_BASE`가 비었을 때 사용 (끝 슬래시 없음). */
+/** 프로덕션 빌드 시 `.env` / CI 환경변수에 비어 있을 때. */
 export const PROD_DEFAULT_API_BASE =
   'https://vibe-pts-checkup-backend.onrender.com'
 
 function normalizeApiBase(s) {
   return String(s ?? '')
     .trim()
-    .replace(/\/$/, '')
+    .replace(/\/+$/, '')
+    .replace(/\/api$/i, '')
 }
 
-const envRaw = import.meta.env.VITE_API_BASE
-const fromEnv = normalizeApiBase(
-  typeof envRaw === 'string' ? envRaw : '',
-)
-
 /**
- * 백엔드 루트 URL (스킴+호스트+포트, 경로 없음).
- * 우선순위: `VITE_API_BASE` → (프로덕션 빌드면 PROD 기본값 / 아니면 DEV 기본값).
+ * 백엔드 루트 URL (경로 없음, `/api/...`는 각 API 모듈에서 붙임).
+ * `vite.config.js`의 `loadEnv` + `define`으로 빌드/개발 서버 기동 시 고정됩니다.
+ * Vercel에서는 Project → Settings → Environment Variables에
+ * `VITE_API_BASE`를 넣고 **재배포**해야 번들에 반영됩니다.
  */
-export const API_BASE =
-  fromEnv ||
-  (import.meta.env.PROD
-    ? normalizeApiBase(PROD_DEFAULT_API_BASE)
-    : normalizeApiBase(DEV_DEFAULT_API_BASE))
+export const API_BASE = normalizeApiBase(__VITE_API_BASE_RESOLVED__)
 
-/** `.env` 등에 적힌 `VITE_API_BASE` 원문 (없으면 빈 문자열). */
-export const VITE_API_BASE_RAW = typeof envRaw === 'string' ? envRaw : ''
+/** 빌드 시점에 읽은 `VITE_API_BASE` 원문 */
+export const VITE_API_BASE_RAW = __VITE_API_BASE_RAW__
 
 /** `VITE_API_BASE`가 비어 있지 않게 설정되어 있으면 true */
-export const API_BASE_FROM_ENV = Boolean(fromEnv)
+export const API_BASE_FROM_ENV = __VITE_API_BASE_FROM_ENV__
 
-/** 환자 API 컬렉션 베이스 (`GET/POST …/api/patients`). */
+/** 환자 API (`/api/patients`). */
 export const PATIENTS_API_BASE = `${API_BASE}/api/patients`
 
-/** MongoDB 연결 요약 (`GET …/api/patients/db-info`). */
 export const PATIENTS_DB_INFO_URL = `${PATIENTS_API_BASE}/db-info`
 
-/** UI용: 배포 기본 호스트의 환자 API URL (env 미설정 안내 등). */
 export const DEPLOYED_PATIENTS_API_BASE = `${PROD_DEFAULT_API_BASE}/api/patients`
+
+/** 인증 (절대 URL로 고정 — 배포 시 상대 경로로 Vercel에 붙는 문제 방지). */
+export const AUTH_LOGIN_URL = `${API_BASE}/api/auth/login`
+export const AUTH_REGISTER_URL = `${API_BASE}/api/auth/register`
