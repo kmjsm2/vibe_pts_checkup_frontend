@@ -1,20 +1,20 @@
-
-
 {
   "name": "pts_checkup_react",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-
-    "dev": "vite", 
+    "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.15.0",
+    "remark-breaks": "^4.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

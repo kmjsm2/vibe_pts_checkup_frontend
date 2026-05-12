@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
+import { formatSymptomCheckResponse, postSymptomCheck } from '../api/ai.js'
 import {
   createPatient,
   deletePatient,
   fetchPatients,
   updatePatient,
 } from '../api/patients.js'
+import { useAuth } from '../hooks/useAuth.js'
 import { PATIENTS_API_BASE as defaultApiBase } from '../config.js'
 import { PatientForm } from './PatientForm.jsx'
 import {
@@ -15,6 +19,18 @@ import {
 } from './patientFormUtils.js'
 
 const PAGE_SIZE = 50
+
+function ageFromBirthDate(value) {
+  if (value == null || value === '') return ''
+  const s = String(value)
+  const d = /^\d{4}-\d{2}-\d{2}/.test(s) ? new Date(s.slice(0, 10)) : new Date(s)
+  if (Number.isNaN(d.getTime())) return ''
+  const today = new Date()
+  let age = today.getFullYear() - d.getFullYear()
+  const m = today.getMonth() - d.getMonth()
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age -= 1
+  return age >= 0 && age < 150 ? String(age) : ''
+}
 
 function formatDate(value) {
   if (value == null || value === '') return '—'
@@ -27,12 +43,12 @@ function formatDate(value) {
 
 export function PatientCheckupApp({
   apiBase,
+  apiRoot,
   dbInfoUrl,
   dbInfo,
   dbInfoError,
   apiEnvRaw,
   apiUsesDotEnv,
-  deployedFallback,
 } = {}) {
   const [patients, setPatients] = useState([])
   const [total, setTotal] = useState(0)
@@ -62,7 +78,17 @@ export function PatientCheckupApp({
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
+  const { logout } = useAuth()
+
+  const [aiPatient, setAiPatient] = useState(null)
+  const [aiSymptoms, setAiSymptoms] = useState('')
+  const [aiAge, setAiAge] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState('')
+  const [aiResultText, setAiResultText] = useState('')
+
   const api = apiBase ?? defaultApiBase
+  const resolvedApiRoot = apiRoot ?? ''
   const resolvedDbInfoUrl = dbInfoUrl ?? `${api}/db-info`
 
   const load = useCallback(async () => {
@@ -149,6 +175,55 @@ export function PatientCheckupApp({
     }
   }
 
+  const openAiModal = (p) => {
+    setAiPatient(p)
+    setAiSymptoms('')
+    setAiAge(ageFromBirthDate(p?.birthDate))
+    setAiError('')
+    setAiResultText('')
+  }
+
+  const closeAiModal = () => {
+    if (aiLoading) return
+    setAiPatient(null)
+    setAiSymptoms('')
+    setAiAge('')
+    setAiError('')
+    setAiResultText('')
+  }
+
+  const runAiSymptomCheck = async () => {
+    setAiError('')
+    setAiResultText('')
+    if (!String(aiSymptoms).trim()) {
+      setAiError('증상을 입력해 주세요.')
+      return
+    }
+    const ageTrim = String(aiAge).trim()
+    let ageValue = null
+    if (ageTrim !== '') {
+      const n = Number(ageTrim)
+      if (Number.isNaN(n) || n < 0 || n > 150) {
+        setAiError('나이는 0–150 사이 숫자로 입력해 주세요.')
+        return
+      }
+      ageValue = n
+    }
+    setAiLoading(true)
+    try {
+      const data = await postSymptomCheck({
+        symptoms: aiSymptoms,
+        age: ageValue,
+        patientId: aiPatient?._id,
+      })
+      setAiResultText(formatSymptomCheckResponse(data))
+    } catch (e) {
+      setAiError(e.message || '분석에 실패했습니다.')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   const confirmDelete = async () => {
     if (!deleteTarget) return
     setDeleting(true)
@@ -209,33 +284,39 @@ export function PatientCheckupApp({
                 apiUsesDotEnv ? 'env-badge env-badge-on' : 'env-badge env-badge-off'
               }
             >
-              {apiUsesDotEnv ? '.env 적용' : '기본 배포 URL'}
+              {apiUsesDotEnv ? '.env 적용' : '모드 기본 호스트'}
             </span>
             {' · '}
-            <code className="inline-code">VITE_PATIENTS_API_BASE</code>
+            <code className="inline-code">VITE_API_BASE</code>
             {': '}
             <code className="inline-code">
               {typeof apiEnvRaw === 'string' && apiEnvRaw.trim()
                 ? apiEnvRaw.trim()
-                : '— (미설정 → ' + (deployedFallback ?? defaultApiBase) + ')'}
+                : `— (미설정 · 현재 적용: ${resolvedApiRoot || '—'})`}
             </code>
           </p>
           <p className="checkup-sub network-hint">
             개발 서버에서는 <code className="inline-code">@vite/client</code>·
             <code className="inline-code">*.jsx</code> 등이{' '}
             <code className="inline-code">localhost:5173</code>에서 오는 것이
-            정상입니다. 환자 API는 목록에서{' '}
+            정상입니다. 환자 API는 네트워크 탭에서{' '}
             <code className="inline-code">patients</code>·
-            <code className="inline-code">db-info</code>를 선택한 뒤 Headers의{' '}
-            <strong>Request URL</strong>이 위 주소(https…)인지 확인하세요.
-            <code className="inline-code">VITE_PATIENTS_API_BASE=/api/…</code>
-            처럼 상대 경로만 두면(프록시 없이) 요청이 전부 그 호스트(localhost)로
-            붙습니다.
+            <code className="inline-code">db-info</code> 요청의{' '}
+            <strong>Request URL</strong>이{' '}
+            <code className="inline-code">{resolvedApiRoot || '백엔드 호스트'}</code>
+            기준인지 확인하세요. <code className="inline-code">VITE_API_BASE</code>에
+            백엔드 루트(<code className="inline-code">http://localhost:5000</code> 등)를
+            넣으면 <code className="inline-code">/api/…</code> 경로가 자동으로 붙습니다.
           </p>
         </div>
-        <button type="button" className="btn primary" onClick={openCreate}>
-          환자 등록
-        </button>
+        <div className="checkup-header-actions">
+          <button type="button" className="btn ghost" onClick={logout}>
+            로그아웃
+          </button>
+          <button type="button" className="btn primary" onClick={openCreate}>
+            환자 등록
+          </button>
+        </div>
       </header>
 
       {dbInfoError ? (
@@ -394,6 +475,13 @@ export function PatientCheckupApp({
                     <button
                       type="button"
                       className="btn link"
+                      onClick={() => openAiModal(p)}
+                    >
+                      AI 증상체크
+                    </button>
+                    <button
+                      type="button"
+                      className="btn link"
                       onClick={() => openEdit(p)}
                     >
                       수정
@@ -463,6 +551,107 @@ export function PatientCheckupApp({
                 disabled={saving}
               >
                 {saving ? '저장 중…' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {aiPatient ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeAiModal()
+          }}
+        >
+          <div
+            className="modal modal-ai"
+            role="dialog"
+            aria-labelledby="ai-symptom-title"
+            aria-modal="true"
+          >
+            <div className="modal-head">
+              <h2 id="ai-symptom-title">AI 증상체크</h2>
+              <button
+                type="button"
+                className="btn icon"
+                onClick={closeAiModal}
+                disabled={aiLoading}
+                aria-label="닫기"
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <p className="ai-modal-patient">
+                환자:{' '}
+                <strong>{aiPatient.name ?? '—'}</strong>
+                {aiPatient.chartNumber ? ` (${aiPatient.chartNumber})` : ''}
+              </p>
+              <label className="patient-field full">
+                <span>증상</span>
+                <textarea
+                  className="ai-symptom-input"
+                  value={aiSymptoms}
+                  onChange={(e) => setAiSymptoms(e.target.value)}
+                  placeholder="증상을 자세히 적어 주세요."
+                  rows={5}
+                  disabled={aiLoading}
+                />
+              </label>
+              <label className="patient-field narrow">
+                <span>나이</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={150}
+                  value={aiAge}
+                  onChange={(e) => setAiAge(e.target.value)}
+                  placeholder="예: 45"
+                  disabled={aiLoading}
+                />
+              </label>
+              {aiError ? (
+                <div className="banner error" role="alert">
+                  {aiError}
+                </div>
+              ) : null}
+              {aiResultText ? (
+                <div className="ai-result-card" role="region" aria-label="분석 결과">
+                  <h3 className="ai-result-title">분석 결과</h3>
+                  <div className="ai-result-body">
+                    <ReactMarkdown remarkPlugins={[remarkBreaks]}>
+                      {aiResultText}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="modal-foot ai-modal-foot">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={closeAiModal}
+                disabled={aiLoading}
+              >
+                닫기
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={runAiSymptomCheck}
+                disabled={aiLoading}
+              >
+                {aiLoading ? (
+                  <>
+                    <span className="spinner spinner-inline" aria-hidden />
+                    분석 중…
+                  </>
+                ) : (
+                  '분석하기'
+                )}
               </button>
             </div>
           </div>
