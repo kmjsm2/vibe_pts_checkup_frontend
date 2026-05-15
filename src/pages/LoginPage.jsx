@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { loginRequest, registerRequest } from '../api/auth.js'
+import { API_BASE } from '../config.js'
 import { useAuth } from '../hooks/useAuth.js'
 
 export function LoginPage() {
@@ -47,7 +48,15 @@ export function LoginPage() {
         }
       }
     } catch (err) {
-      setError(err.message || '요청에 실패했습니다.')
+      const msg = err?.message || ''
+      if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+        const host = API_BASE || '—'
+        setError(
+          `서버에 연결할 수 없습니다. 인터넷·VPN·방화벽을 확인한 뒤 다시 시도해 주세요. (API: ${host})`,
+        )
+      } else {
+        setError(msg || '요청에 실패했습니다.')
+      }
     } finally {
       setSubmitting(false)
     }

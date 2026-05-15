@@ -5,9 +5,8 @@ import react from '@vitejs/plugin-react'
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 
-const DEV_DEFAULT_API_BASE = 'http://localhost:5000'
-const PROD_DEFAULT_API_BASE =
-  'https://vibe-pts-checkup-backend.onrender.com'
+/** `VITE_API_BASE`가 비어 있을 때 사용하는 기본 백엔드 루트 (개발·프로덕션 동일). */
+const DEFAULT_API_BASE = 'https://vibe-pts-checkup-backend.onrender.com'
 
 function trimTrailingSlashes(s) {
   return String(s ?? '')
@@ -42,13 +41,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, projectRoot, '')
   const raw = env.VITE_API_BASE ?? ''
   const fromEnv = normalizeUserApiBase(raw)
-  const resolved =
-    fromEnv ||
-    (mode === 'production'
-      ? stripApiPathSuffix(PROD_DEFAULT_API_BASE)
-      : stripApiPathSuffix(DEV_DEFAULT_API_BASE))
-
-  const useLocalProxy = env.VITE_DEV_PROXY_LOCAL === 'true'
+  const resolved = fromEnv || stripApiPathSuffix(DEFAULT_API_BASE)
 
   return {
     root: projectRoot,
@@ -59,18 +52,6 @@ export default defineConfig(({ mode }) => {
       __VITE_API_BASE_RESOLVED__: JSON.stringify(resolved),
       __VITE_API_BASE_RAW__: JSON.stringify(raw),
       __VITE_API_BASE_FROM_ENV__: JSON.stringify(Boolean(fromEnv)),
-    },
-    server: {
-      ...(useLocalProxy
-        ? {
-            proxy: {
-              '/api': {
-                target: 'http://localhost:5000',
-                changeOrigin: true,
-              },
-            },
-          }
-        : {}),
     },
   }
 })

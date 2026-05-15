@@ -1,7 +1,11 @@
 /* global __VITE_API_BASE_RESOLVED__, __VITE_API_BASE_RAW__, __VITE_API_BASE_FROM_ENV__ */
 
-/** 개발 시 `.env`에 비어 있을 때 (vite `mode === 'development'`). */
-export const DEV_DEFAULT_API_BASE = 'http://localhost:5000'
+/**
+ * 개발 시 `VITE_API_BASE`가 비어 있을 때 기본 백엔드 루트 (`vite.config.js`와 동일).
+ * 다른 배포 URL을 쓰려면 `.env`에 `VITE_API_BASE=https://…` 를 설정하세요.
+ */
+export const DEV_DEFAULT_API_BASE =
+  'https://vibe-pts-checkup-backend.onrender.com'
 
 /** 프로덕션 빌드 시 `.env` / CI 환경변수에 비어 있을 때. */
 export const PROD_DEFAULT_API_BASE =

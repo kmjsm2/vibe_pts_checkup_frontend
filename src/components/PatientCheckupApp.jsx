@@ -293,17 +293,16 @@ export function PatientCheckupApp({
             </code>
           </p>
           <p className="checkup-sub network-hint">
-            개발 서버에서는 <code className="inline-code">@vite/client</code>·
-            <code className="inline-code">*.jsx</code> 등이{' '}
-            <code className="inline-code">localhost:5173</code>에서 오는 것이
+            Vite 개발 서버에서 <code className="inline-code">@vite/client</code>·
+            <code className="inline-code">*.jsx</code> 등은 프론트 호스트에서 로드되는 것이
             정상입니다. 환자 API는 네트워크 탭에서{' '}
             <code className="inline-code">patients</code>·
             <code className="inline-code">db-info</code> 요청의{' '}
             <strong>Request URL</strong>이{' '}
             <code className="inline-code">{resolvedApiRoot || '백엔드 호스트'}</code>
             기준인지 확인하세요. <code className="inline-code">VITE_API_BASE</code>에
-            백엔드 루트(<code className="inline-code">http://localhost:5000</code> 등)를
-            넣으면 <code className="inline-code">/api/…</code> 경로가 자동으로 붙습니다.
+            HTTPS 백엔드 루트를 넣으면 <code className="inline-code">/api/…</code> 경로가
+            자동으로 붙습니다.
           </p>
         </div>
         <div className="checkup-header-actions">

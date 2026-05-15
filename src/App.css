@@ -1274,6 +1274,13 @@ a.db-info-link:hover {
   font-size: 13px;
   font-weight: 600;
   color: var(--c-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.clinical-tab:hover:not(.active) {
+  color: var(--c-text-hi);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .clinical-tab.active {
@@ -1313,6 +1320,457 @@ a.db-info-link:hover {
   font-size: 14px;
   color: #e2e8f0;
   line-height: 1.5;
+}
+
+/* 영상 검사 탭 (서버 연동) */
+.clinical-imaging-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.clinical-imaging-timeline-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.clinical-imaging-timeline-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.clinical-imaging-timeline-loading,
+.clinical-imaging-timeline-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--c-text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+}
+
+.clinical-imaging-timeline {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px 10px;
+  scrollbar-width: thin;
+}
+
+.clinical-imaging-timeline-item {
+  flex: 0 0 auto;
+  width: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 0;
+  border: 2px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-surface2);
+  cursor: pointer;
+  font: inherit;
+  color: var(--c-text);
+  overflow: hidden;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.clinical-imaging-timeline-item:hover {
+  border-color: #3d4a63;
+}
+
+.clinical-imaging-timeline-item.active {
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.25);
+}
+
+.clinical-imaging-timeline-img {
+  display: block;
+  width: 100%;
+  height: 64px;
+  object-fit: cover;
+}
+
+.clinical-imaging-timeline-placeholder {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #64748b;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.clinical-imaging-timeline-date {
+  font-size: 10px;
+  line-height: 1.25;
+  padding: 0 6px 6px;
+  text-align: center;
+  color: var(--c-text);
+}
+
+.clinical-imaging-result-wrap {
+  position: relative;
+  min-height: 280px;
+}
+
+.clinical-imaging-analyze-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-radius: 12px;
+  background: rgba(12, 14, 18, 0.82);
+  color: var(--c-text-hi);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.clinical-imaging-detail-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--c-text);
+  min-height: 120px;
+}
+
+.clinical-imaging-result {
+  display: grid;
+  grid-template-columns: 40% 60%;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .clinical-imaging-result {
+    grid-template-columns: 1fr;
+  }
+}
+
+.clinical-imaging-preview-col {
+  min-width: 0;
+}
+
+.clinical-imaging-preview-frame {
+  border-radius: 12px;
+  border: 1px solid var(--c-border);
+  background: #0a0c10;
+  overflow: hidden;
+  aspect-ratio: 1;
+  max-height: min(420px, 50vh);
+}
+
+.clinical-imaging-preview-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.clinical-imaging-preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 160px;
+  padding: 16px;
+  font-size: 13px;
+  color: var(--c-text);
+  text-align: center;
+}
+
+.clinical-imaging-opinion-col {
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+}
+
+.clinical-imaging-opinion-head {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.clinical-imaging-opinion-title {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--c-text-hi);
+}
+
+.clinical-imaging-opinion-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--c-text);
+}
+
+.clinical-imaging-type-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(91, 140, 255, 0.18);
+  color: #bae6fd;
+  border: 1px solid rgba(91, 140, 255, 0.35);
+}
+
+.clinical-imaging-opinion-date {
+  font-size: 12px;
+  color: var(--c-text);
+}
+
+.clinical-imaging-opinion-section {
+  margin-bottom: 14px;
+}
+
+.clinical-imaging-opinion-section h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.clinical-imaging-opinion-section p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+}
+
+.clinical-imaging-confidence {
+  margin: 16px 0 14px;
+}
+
+.clinical-imaging-confidence-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-text-hi);
+  margin-bottom: 6px;
+}
+
+.clinical-imaging-confidence-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #1e2533;
+  overflow: hidden;
+}
+
+.clinical-imaging-confidence-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.clinical-imaging-confidence-high {
+  background: #4ade80;
+}
+
+.clinical-imaging-confidence-mid {
+  background: #fbbf24;
+}
+
+.clinical-imaging-confidence-low {
+  background: #f87171;
+}
+
+.clinical-imaging-confidence-none {
+  background: #64748b;
+}
+
+.clinical-imaging-disclaimer {
+  margin: 0 0 14px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.clinical-imaging-lead {
+  margin: 0;
+  font-size: 13px;
+  color: var(--c-text);
+  line-height: 1.45;
+}
+
+.clinical-imaging-type-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.clinical-imaging-type-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface2);
+  color: var(--c-text);
+  cursor: pointer;
+}
+
+.clinical-imaging-type-btn:hover {
+  color: var(--c-text-hi);
+  border-color: #3d4a63;
+}
+
+.clinical-imaging-type-btn.active {
+  border-color: rgba(91, 140, 255, 0.55);
+  background: rgba(91, 140, 255, 0.14);
+  color: var(--c-text-hi);
+}
+
+.clinical-imaging-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 140px;
+  padding: 20px 16px;
+  border-radius: 10px;
+  border: 2px dashed var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text-hi);
+  cursor: pointer;
+  text-align: center;
+  box-sizing: border-box;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.clinical-imaging-drop:hover {
+  border-color: rgba(91, 140, 255, 0.35);
+  background: rgba(91, 140, 255, 0.06);
+}
+
+.clinical-imaging-drop.dragover {
+  border-color: var(--c-accent);
+  border-style: solid;
+  box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.2);
+  background: rgba(91, 140, 255, 0.1);
+}
+
+.clinical-imaging-drop-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-text-hi);
+}
+
+.clinical-imaging-drop-hint {
+  font-size: 12px;
+  color: var(--c-text);
+}
+
+.clinical-imaging-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.clinical-imaging-thumbs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.clinical-imaging-thumb {
+  position: relative;
+  border-radius: 10px;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface2);
+  overflow: hidden;
+  aspect-ratio: 1;
+}
+
+.clinical-imaging-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.clinical-imaging-thumb-type {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(12, 14, 18, 0.82);
+  color: var(--c-text-hi);
+}
+
+.clinical-imaging-thumb-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(248, 113, 113, 0.85);
+}
+
+.clinical-imaging-thumb-remove:hover {
+  background: #f87171;
+}
+
+.clinical-imaging-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .clinical-alerts {

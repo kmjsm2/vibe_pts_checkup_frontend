@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { formatSymptomCheckResponse, postSymptomCheck } from '../../api/ai.js'
+import {
+  analyzePatientImage,
+  fetchPatientImage,
+  fetchPatientImages,
+  formatSymptomCheckResponse,
+  postSymptomCheck,
+  uploadPatientImage,
+} from '../../api/ai.js'
 import {
   createPatient,
   deletePatient,
@@ -85,6 +92,458 @@ function concernBullets(p) {
   return items
 }
 
+const IMAGING_TYPE_OPTIONS = [
+  { id: 'xray', label: 'X-ray' },
+  { id: 'ct', label: 'CT' },
+  { id: 'mri', label: 'MRI' },
+]
+
+function imagingTypeLabel(type) {
+  const o = IMAGING_TYPE_OPTIONS.find((x) => x.id === type)
+  return o ? o.label : String(type ?? '—')
+}
+
+function normalizeServerImageType(t) {
+  const s = String(t ?? '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+  if (s === 'x-ray' || s === 'xray' || s === 'xr' || s === 'cr') return 'xray'
+  if (s === 'ct') return 'ct'
+  if (s === 'mri') return 'mri'
+  return s || 'xray'
+}
+
+function normalizeImagesList(body) {
+  if (Array.isArray(body)) return body
+  if (!body || typeof body !== 'object') return []
+  const inner = body.images ?? body.data ?? body.items ?? body.docs ?? body.results
+  return Array.isArray(inner) ? inner : []
+}
+
+function getImageRowId(row) {
+  if (!row || typeof row !== 'object') return null
+  return row._id ?? row.id ?? row.imageId ?? null
+}
+
+function getImageSortTime(row) {
+  const t = row?.createdAt ?? row?.uploadedAt ?? row?.created ?? row?.date ?? row?.timestamp
+  const d = t ? new Date(t) : new Date(0)
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime()
+}
+
+function toDataUrlFromDetail(detail) {
+  if (!detail || typeof detail !== 'object') return ''
+  const raw =
+    detail.imageDataUrl ??
+    detail.imageUrl ??
+    detail.url ??
+    (typeof detail.image === 'string' ? detail.image : null) ??
+    detail.base64 ??
+    detail.data ??
+    detail.content
+  if (raw == null || typeof raw !== 'string') return ''
+  const s = raw.trim()
+  if (!s) return ''
+  if (s.startsWith('data:')) return s
+  const mime =
+    (typeof detail.mimeType === 'string' && detail.mimeType) ||
+    (typeof detail.contentType === 'string' && detail.contentType) ||
+    'image/png'
+  return `data:${mime};base64,${s}`
+}
+
+function timelineThumbSrc(row) {
+  if (!row || typeof row !== 'object') return ''
+  const u = row.thumbnailUrl ?? row.thumbUrl ?? row.previewUrl
+  if (typeof u === 'string' && u.trim()) {
+    const t = u.trim()
+    return t.startsWith('data:') || /^https?:/i.test(t) ? t : toDataUrlFromDetail({ image: t, mimeType: row.mimeType })
+  }
+  const b = row.thumbnail ?? row.thumbnailBase64 ?? row.thumb
+  if (typeof b === 'string' && b.trim()) {
+    return toDataUrlFromDetail({ image: b.trim(), mimeType: row.thumbnailMime ?? row.mimeType })
+  }
+  return ''
+}
+
+function extractOpinion(detail, extra) {
+  const base = { ...(detail && typeof detail === 'object' ? detail : {}), ...(extra && typeof extra === 'object' ? extra : {}) }
+  const inner = base.analysis && typeof base.analysis === 'object' ? base.analysis : {}
+  const from = { ...base, ...inner }
+  const join = (v) => {
+    if (v == null) return ''
+    if (Array.isArray(v)) return v.map((x) => String(x)).filter(Boolean).join('\n')
+    return String(v).trim()
+  }
+  return {
+    findings: join(from.findings ?? from.finding),
+    impression: join(from.impression),
+    recommendation: join(from.recommendation ?? from.recommendations),
+    confidence: Number(from.confidence),
+    analyzedAt: from.analyzedAt ?? from.analysisDate ?? from.updatedAt ?? '',
+    imageType: from.imageType ?? from.type ?? base.imageType,
+  }
+}
+
+function confidenceTone(conf) {
+  const n = Number(conf)
+  if (!Number.isFinite(n)) return 'none'
+  if (n >= 80) return 'high'
+  if (n >= 50) return 'mid'
+  return 'low'
+}
+
+function formatImagingDate(value) {
+  if (value == null || value === '') return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+/** 영상 검사 탭: 서버 이미지 목록·업로드·AI 분석 */
+function ImagingTab({ patientId }) {
+  const [uploadType, setUploadType] = useState('xray')
+  const [dragOver, setDragOver] = useState(false)
+  const inputRef = useRef(null)
+
+  const [rows, setRows] = useState([])
+  const [listLoading, setListLoading] = useState(true)
+  const [listError, setListError] = useState('')
+
+  const [selectedId, setSelectedId] = useState(null)
+  const [imageDetail, setImageDetail] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState('')
+
+  const [opinionExtra, setOpinionExtra] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [analyzeLoading, setAnalyzeLoading] = useState(false)
+  const [actionError, setActionError] = useState('')
+
+  const loadList = useCallback(async () => {
+    if (patientId == null || patientId === '') {
+      setRows([])
+      setListLoading(false)
+      return
+    }
+    setListError('')
+    setListLoading(true)
+    try {
+      const body = await fetchPatientImages(patientId)
+      const list = normalizeImagesList(body)
+      const sorted = [...list].sort((a, b) => getImageSortTime(a) - getImageSortTime(b))
+      setRows(sorted)
+    } catch (e) {
+      setListError(e.message || '영상 목록을 불러오지 못했습니다.')
+      setRows([])
+    } finally {
+      setListLoading(false)
+    }
+  }, [patientId])
+
+  useEffect(() => {
+    loadList()
+  }, [loadList])
+
+  useEffect(() => {
+    setSelectedId(null)
+    setImageDetail(null)
+    setOpinionExtra(null)
+    setDetailError('')
+    setActionError('')
+  }, [patientId])
+
+  useEffect(() => {
+    if (selectedId == null || patientId == null || patientId === '') {
+      setImageDetail(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setDetailLoading(true)
+      setDetailError('')
+      setOpinionExtra(null)
+      try {
+        const d = await fetchPatientImage(patientId, selectedId)
+        if (!cancelled) setImageDetail(d)
+      } catch (e) {
+        if (!cancelled) {
+          setImageDetail(null)
+          setDetailError(e.message || '영상을 불러오지 못했습니다.')
+        }
+      } finally {
+        if (!cancelled) setDetailLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [patientId, selectedId])
+
+  useEffect(() => {
+    if (!rows.length) {
+      setSelectedId(null)
+      return
+    }
+    setSelectedId((cur) => {
+      if (cur != null && rows.some((r) => getImageRowId(r) === cur)) return cur
+      return getImageRowId(rows[rows.length - 1])
+    })
+  }, [rows])
+
+  const addFiles = async (fileList) => {
+    if (patientId == null || patientId === '') return
+    const list = Array.from(fileList ?? []).filter(
+      (f) => f.type === 'image/jpeg' || f.type === 'image/png',
+    )
+    if (!list.length) return
+    setActionError('')
+    setUploading(true)
+    try {
+      for (const file of list) {
+        await uploadPatientImage(patientId, file, uploadType)
+      }
+      await loadList()
+    } catch (e) {
+      setActionError(e.message || '업로드에 실패했습니다.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const onDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    void addFiles(e.dataTransfer?.files)
+  }
+
+  const onAnalyze = async () => {
+    if (selectedId == null || patientId == null || patientId === '') return
+    setActionError('')
+    setAnalyzeLoading(true)
+    try {
+      const out = await analyzePatientImage(patientId, selectedId)
+      setOpinionExtra(out)
+      const d = await fetchPatientImage(patientId, selectedId)
+      setImageDetail(d)
+    } catch (e) {
+      setActionError(e.message || 'AI 분석에 실패했습니다.')
+    } finally {
+      setAnalyzeLoading(false)
+    }
+  }
+
+  const previewSrc = toDataUrlFromDetail(imageDetail)
+  const opinion = extractOpinion(imageDetail, opinionExtra)
+  const typeKey = normalizeServerImageType(opinion.imageType ?? imageDetail?.imageType ?? uploadType)
+  const conf = opinion.confidence
+  const confTone = confidenceTone(conf)
+  const confPct = Number.isFinite(conf) ? Math.min(100, Math.max(0, conf)) : null
+
+  if (patientId == null || patientId === '') {
+    return (
+      <div className="clinical-imaging-tab">
+        <p className="clinical-imaging-lead">환자를 선택한 뒤 영상을 관리할 수 있습니다.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="clinical-imaging-tab">
+      {listError ? (
+        <div className="clinical-banner clinical-banner-error" role="alert">
+          {listError}
+        </div>
+      ) : null}
+      {actionError ? (
+        <div className="clinical-banner clinical-banner-error" role="alert">
+          {actionError}
+        </div>
+      ) : null}
+
+      <p className="clinical-imaging-lead">서버에 저장된 영상을 불러오고, 업로드·AI 소견을 요청합니다.</p>
+
+      <div className="clinical-imaging-type-row" role="group" aria-label="업로드 시 영상 종류">
+        {IMAGING_TYPE_OPTIONS.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            disabled={uploading}
+            className={`clinical-imaging-type-btn${uploadType === opt.id ? ' active' : ''}`}
+            onClick={() => setUploadType(opt.id)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        disabled={uploading}
+        className={`clinical-imaging-drop${dragOver ? ' dragover' : ''}`}
+        onClick={() => inputRef.current?.click()}
+        onDragEnter={(e) => {
+          e.preventDefault()
+          setDragOver(true)
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false)
+        }}
+        onDrop={onDrop}
+      >
+        <span className="clinical-imaging-drop-title">
+          {uploading ? '업로드 중…' : '이미지를 끌어 놓거나 클릭하여 업로드'}
+        </span>
+        <span className="clinical-imaging-drop-hint">JPEG, PNG만 가능합니다.</span>
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        className="clinical-imaging-file-input"
+        accept="image/jpeg,image/png"
+        multiple
+        aria-hidden
+        tabIndex={-1}
+        disabled={uploading}
+        onChange={(e) => {
+          void addFiles(e.target.files)
+          e.target.value = ''
+        }}
+      />
+
+      <div className="clinical-imaging-timeline-wrap">
+        <div className="clinical-imaging-timeline-label">영상 타임라인 (날짜순)</div>
+        {listLoading ? (
+          <div className="clinical-imaging-timeline-loading">
+            <span className="spinner clinical-spinner" aria-hidden />
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="clinical-imaging-timeline-empty">등록된 영상이 없습니다. 위에서 업로드하세요.</p>
+        ) : (
+          <div className="clinical-imaging-timeline" role="list">
+            {rows.map((row, idx) => {
+              const id = getImageRowId(row)
+              const active = id != null && id === selectedId
+              const thumb = timelineThumbSrc(row)
+              const t = row?.createdAt ?? row?.uploadedAt ?? row?.created ?? row?.date
+              return (
+                <button
+                  key={id != null ? String(id) : `row-${idx}`}
+                  type="button"
+                  role="listitem"
+                  className={`clinical-imaging-timeline-item${active ? ' active' : ''}`}
+                  onClick={() => id != null && setSelectedId(id)}
+                >
+                  {thumb ? (
+                    <img src={thumb} alt="" className="clinical-imaging-timeline-img" />
+                  ) : (
+                    <div className="clinical-imaging-timeline-placeholder" aria-hidden>
+                      ◧
+                    </div>
+                  )}
+                  <span className="clinical-imaging-timeline-date">{formatImagingDate(t)}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="clinical-imaging-result-wrap">
+        {analyzeLoading ? (
+          <div className="clinical-imaging-analyze-overlay" role="status" aria-live="polite">
+            <span className="spinner clinical-spinner" aria-hidden />
+            <p>AI가 영상을 분석하고 있습니다…</p>
+          </div>
+        ) : null}
+
+        {detailLoading ? (
+          <div className="clinical-imaging-detail-loading">
+            <span className="spinner clinical-spinner" aria-hidden />
+            <span>영상을 불러오는 중…</span>
+          </div>
+        ) : detailError ? (
+          <div className="clinical-banner clinical-banner-error" role="alert">
+            {detailError}
+          </div>
+        ) : selectedId == null ? (
+          <p className="clinical-imaging-timeline-empty">표시할 영상이 없습니다.</p>
+        ) : (
+          <div className="clinical-imaging-result">
+            <div className="clinical-imaging-preview-col">
+              <div className="clinical-imaging-preview-frame">
+                {previewSrc ? (
+                  <img src={previewSrc} alt="선택한 영상" className="clinical-imaging-preview-img" />
+                ) : (
+                  <div className="clinical-imaging-preview-empty">미리보기 데이터가 없습니다.</div>
+                )}
+              </div>
+            </div>
+            <div className="clinical-imaging-opinion-col">
+              <header className="clinical-imaging-opinion-head">
+                <h3 className="clinical-imaging-opinion-title">🔬 AI 영상 소견</h3>
+                <div className="clinical-imaging-opinion-meta">
+                  <span className="clinical-imaging-type-badge">{imagingTypeLabel(typeKey)}</span>
+                  <span className="clinical-imaging-opinion-date">
+                    분석: {opinion.analyzedAt ? formatImagingDate(opinion.analyzedAt) : '—'}
+                  </span>
+                </div>
+              </header>
+
+              <section className="clinical-imaging-opinion-section">
+                <h4>Findings</h4>
+                <p>{opinion.findings || '—'}</p>
+              </section>
+              <section className="clinical-imaging-opinion-section">
+                <h4>Impression</h4>
+                <p>{opinion.impression || '—'}</p>
+              </section>
+              <section className="clinical-imaging-opinion-section">
+                <h4>Recommendation</h4>
+                <p>{opinion.recommendation || '—'}</p>
+              </section>
+
+              {confPct != null ? (
+                <div className="clinical-imaging-confidence">
+                  <div className="clinical-imaging-confidence-label">
+                    <span>Confidence</span>
+                    <span>{Math.round(confPct)}%</span>
+                  </div>
+                  <div className="clinical-imaging-confidence-track">
+                    <div
+                      className={`clinical-imaging-confidence-fill clinical-imaging-confidence-${confTone}`}
+                      style={{ width: `${confPct}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              <p className="clinical-imaging-disclaimer">
+                ⚠️ 본 소견은 AI 보조 도구로 생성되었습니다. 최종 판독 및 진단은 반드시 전문의가 확인해야 합니다. (식약처
+                SaMD 가이드라인 준수)
+              </p>
+
+              <div className="clinical-imaging-actions">
+                <button
+                  type="button"
+                  className="clinical-btn clinical-btn-ai"
+                  disabled={analyzeLoading || detailLoading}
+                  onClick={() => void onAnalyze()}
+                >
+                  AI 소견 생성
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function ClinicalPatientWorkspace({
   createNonce = 0,
   selectedPatientId,
@@ -116,6 +575,12 @@ export function ClinicalPatientWorkspace({
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState('')
   const [aiResultText, setAiResultText] = useState('')
+
+  const [activeTab, setActiveTab] = useState('overview')
+
+  useEffect(() => {
+    setActiveTab('overview')
+  }, [selectedPatientId])
 
   useEffect(() => {
     if (!selectedPatientId) {
@@ -389,25 +854,51 @@ export function ClinicalPatientWorkspace({
             </div>
 
             <div className="clinical-tabs">
-              <span className="clinical-tab active">개요</span>
-              <span className="clinical-tab disabled">검사</span>
-              <span className="clinical-tab disabled">처방</span>
+              <span
+                className={`clinical-tab${activeTab === 'overview' ? ' active' : ''}`}
+                onClick={() => setActiveTab('overview')}
+              >
+                개요
+              </span>
+              <span
+                className={`clinical-tab${activeTab === 'imaging' ? ' active' : ''}`}
+                onClick={() => setActiveTab('imaging')}
+              >
+                영상 검사
+              </span>
+              <span
+                className={`clinical-tab${activeTab === 'prescription' ? ' active' : ''}`}
+                onClick={() => setActiveTab('prescription')}
+              >
+                처방
+              </span>
             </div>
 
-            <div className="clinical-mini-grid">
-              <div className="clinical-mini-card">
-                <h3>진단</h3>
-                <p>{p.diagnosis ?? '—'}</p>
+            {activeTab === 'overview' && (
+              <div className="clinical-mini-grid">
+                <div className="clinical-mini-card">
+                  <h3>진단</h3>
+                  <p>{p.diagnosis ?? '—'}</p>
+                </div>
+                <div className="clinical-mini-card">
+                  <h3>약물</h3>
+                  <p>
+                    {Array.isArray(p.medications)
+                      ? p.medications.join(', ') || '—'
+                      : p.medications ?? '—'}
+                  </p>
+                </div>
               </div>
+            )}
+
+            {activeTab === 'imaging' && <ImagingTab patientId={p._id} />}
+
+            {activeTab === 'prescription' && (
               <div className="clinical-mini-card">
-                <h3>약물</h3>
-                <p>
-                  {Array.isArray(p.medications)
-                    ? p.medications.join(', ') || '—'
-                    : p.medications ?? '—'}
-                </p>
+                <h3>처방 내역</h3>
+                <p>처방 데이터가 없습니다.</p>
               </div>
-            </div>
+            )}
           </>
         ) : null}
       </section>
