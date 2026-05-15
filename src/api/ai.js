@@ -199,3 +199,28 @@ export async function fetchPatientImage(patientId, imageId) {
   }
   return json
 }
+
+/**
+ * POST /api/ai/patients/:patientId/images/compare
+ * body: { imageId1, imageId2 }
+ */
+export async function comparePatientImages(patientId, imageId1, imageId2) {
+  const base = assertApiBase()
+  const pid = encodeURIComponent(String(patientId ?? ''))
+  const url = `${base}/api/ai/patients/${pid}/images/compare`
+  const res = await authFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      imageId1: String(imageId1 ?? ''),
+      imageId2: String(imageId2 ?? ''),
+    }),
+  })
+  const json = await readJsonSafe(res)
+  if (!res.ok) {
+    throw new Error(
+      messageFromJson(json, res.statusText || '영상 비교 분석에 실패했습니다.'),
+    )
+  }
+  return json
+}

@@ -1773,6 +1773,215 @@ a.db-info-link:hover {
   gap: 10px;
 }
 
+/* 영상 모드: 단일 / 비교 */
+.clinical-imaging-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.clinical-imaging-mode-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface2);
+  color: var(--c-text);
+  cursor: pointer;
+}
+
+.clinical-imaging-mode-btn:hover {
+  color: var(--c-text-hi);
+  border-color: #3d4a63;
+}
+
+.clinical-imaging-mode-btn.active {
+  border-color: rgba(91, 140, 255, 0.55);
+  background: rgba(91, 140, 255, 0.16);
+  color: var(--c-text-hi);
+}
+
+.clinical-imaging-compare-notice {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.1);
+  color: #fde68a;
+  font-size: 14px;
+}
+
+.clinical-imaging-compare-select {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 720px) {
+  .clinical-imaging-compare-select {
+    grid-template-columns: 1fr;
+  }
+}
+
+.clinical-imaging-compare-side-head {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.clinical-imaging-timeline-compare {
+  max-width: 100%;
+}
+
+.clinical-imaging-timeline-item.blocked,
+.clinical-imaging-timeline-item:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.clinical-imaging-compare-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .clinical-imaging-compare-panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+.clinical-imaging-compare-preview {
+  max-height: 220px;
+  aspect-ratio: 4 / 3;
+}
+
+.clinical-imaging-compare-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.clinical-imaging-compare-ai-box {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--c-border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.clinical-imaging-compare-ai-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.clinical-imaging-compare-ai-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+}
+
+.clinical-imaging-compare-run-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.clinical-imaging-compare-run-btn {
+  min-width: 220px;
+}
+
+.clinical-imaging-compare-result-wrap {
+  margin-top: 8px;
+}
+
+.clinical-imaging-compare-result-inner {
+  position: relative;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  min-height: 120px;
+}
+
+.clinical-imaging-compare-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 12px;
+  background: rgba(12, 14, 18, 0.88);
+  color: var(--c-text-hi);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.clinical-imaging-compare-result-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-text-hi);
+}
+
+.clinical-imaging-compare-result-summary {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+}
+
+.clinical-imaging-compare-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.clinical-imaging-trend-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+
+.clinical-imaging-trend-improved {
+  background: rgba(74, 222, 128, 0.18);
+  color: #bbf7d0;
+  border: 1px solid rgba(74, 222, 128, 0.45);
+}
+
+.clinical-imaging-trend-worse {
+  background: rgba(248, 113, 113, 0.15);
+  color: #fecaca;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+}
+
+.clinical-imaging-trend-stable {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
 .clinical-alerts {
   width: 320px;
   flex-shrink: 0;

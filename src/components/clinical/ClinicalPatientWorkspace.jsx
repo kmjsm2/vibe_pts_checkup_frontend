@@ -4,6 +4,7 @@ import remarkBreaks from 'remark-breaks'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   analyzePatientImage,
+  comparePatientImages,
   fetchPatientImage,
   fetchPatientImages,
   formatSymptomCheckResponse,
@@ -200,6 +201,115 @@ function formatImagingDate(value) {
   return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+function pickStr(v) {
+  if (v == null) return ''
+  if (typeof v === 'string') return v.trim() ? v : ''
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v)
+  return ''
+}
+
+function shortenSummaryText(text, max) {
+  const s = String(text ?? '').trim().replace(/\s+/g, ' ')
+  const m = max ?? 420
+  if (s.length <= m) return s
+  return `${s.slice(0, m)}…`
+}
+
+/** 단일 상세에서 Findings·Impression 요약 (비교 패널용) */
+function buildOpinionShortSummary(detail) {
+  const o = extractOpinion(detail, null)
+  const joined = [o.findings, o.impression].filter(Boolean).join('\n\n').trim()
+  return joined ? shortenSummaryText(joined, 420) : ''
+}
+
+function rowDisplayDate(row) {
+  return row?.createdAt ?? row?.uploadedAt ?? row?.created ?? row?.date
+}
+
+/** 비교 API 응답에서 요약·배지 추출 */
+function extractCompareResultData(body) {
+  const root = body?.data && typeof body.data === 'object' ? body.data : body || {}
+  const summary =
+    pickStr(root.summary) ||
+    pickStr(root.changeSummary) ||
+    pickStr(root.comparisonSummary) ||
+    pickStr(root.comparison) ||
+    pickStr(root.text) ||
+    pickStr(root.message) ||
+    pickStr(root.changeDescription) ||
+    pickStr(root.result)
+  const badges = []
+  const add = (key, label) => {
+    if (!badges.some((b) => b.key === key)) badges.push({ key, label })
+  }
+  const scan = (txt) => {
+    if (!txt || typeof txt !== 'string') return
+    if (/호전|개선|improved|better/i.test(txt)) add('improved', '호전')
+    if (/악화|worse|progression|악화됨/i.test(txt)) add('worse', '악화')
+    if (/유지|stable|unchanged|변화\s*없|비슷|similar/i.test(txt)) add('stable', '유지')
+  }
+  scan(summary)
+  scan(pickStr(root.status))
+  scan(pickStr(root.trend))
+  scan(pickStr(root.overallTrend))
+  scan(pickStr(root.changeType))
+  if (Array.isArray(root.badges)) {
+    for (const b of root.badges) scan(String(b))
+  }
+  if (Array.isArray(root.statuses)) {
+    for (const s of root.statuses) scan(String(s))
+  }
+  const st = String(root.status ?? root.overallTrend ?? root.changeType ?? '').toLowerCase()
+  if (st === 'improved' || st === 'better') add('improved', '호전')
+  if (st === 'worse' || st === 'progression') add('worse', '악화')
+  if (st === 'stable' || st === 'unchanged') add('stable', '유지')
+  return { summary: summary ? String(summary).trim() : '', badges }
+}
+
+function renderCompareTimeline(rows, selectedId, otherId, onPick, listLoading) {
+  if (listLoading) {
+    return (
+      <div className="clinical-imaging-timeline-loading">
+        <span className="spinner clinical-spinner" aria-hidden />
+      </div>
+    )
+  }
+  if (!rows.length) {
+    return <p className="clinical-imaging-timeline-empty">영상 없음</p>
+  }
+  return (
+    <div className="clinical-imaging-timeline clinical-imaging-timeline-compare" role="list">
+      {rows.map((row, idx) => {
+        const id = getImageRowId(row)
+        const active = id != null && id === selectedId
+        const disabledOther = id != null && otherId != null && id === otherId
+        const thumb = timelineThumbSrc(row)
+        const t = rowDisplayDate(row)
+        return (
+          <button
+            key={id != null ? String(id) : `row-${idx}`}
+            type="button"
+            role="listitem"
+            disabled={disabledOther}
+            title={disabledOther ? '다른 쪽에서 선택된 영상입니다' : undefined}
+            className={`clinical-imaging-timeline-item${active ? ' active' : ''}${disabledOther ? ' blocked' : ''}`}
+            onClick={() => id != null && !disabledOther && onPick(id)}
+          >
+            {thumb ? (
+              <img src={thumb} alt="" className="clinical-imaging-timeline-img" />
+            ) : (
+              <div className="clinical-imaging-timeline-placeholder" aria-hidden>
+                ◧
+              </div>
+            )}
+            <span className="clinical-imaging-timeline-date">{formatImagingDate(t)}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 /** 영상 검사 탭: 서버 이미지 목록·업로드·AI 분석 */
 function ImagingTab({ patientId }) {
   const [uploadType, setUploadType] = useState('xray')
@@ -219,6 +329,16 @@ function ImagingTab({ patientId }) {
   const [uploading, setUploading] = useState(false)
   const [analyzeLoading, setAnalyzeLoading] = useState(false)
   const [actionError, setActionError] = useState('')
+
+  const [imagingViewMode, setImagingViewMode] = useState('single')
+  const [comparePrevId, setComparePrevId] = useState(null)
+  const [compareRecentId, setCompareRecentId] = useState(null)
+  const [comparePrevDetail, setComparePrevDetail] = useState(null)
+  const [compareRecentDetail, setCompareRecentDetail] = useState(null)
+  const [comparePrevLoading, setComparePrevLoading] = useState(false)
+  const [compareRecentLoading, setCompareRecentLoading] = useState(false)
+  const [compareResult, setCompareResult] = useState(null)
+  const [compareLoading, setCompareLoading] = useState(false)
 
   const loadList = useCallback(async () => {
     if (patientId == null || patientId === '') {
@@ -251,9 +371,18 @@ function ImagingTab({ patientId }) {
     setOpinionExtra(null)
     setDetailError('')
     setActionError('')
+    setImagingViewMode('single')
+    setComparePrevId(null)
+    setCompareRecentId(null)
+    setComparePrevDetail(null)
+    setCompareRecentDetail(null)
+    setCompareResult(null)
   }, [patientId])
 
   useEffect(() => {
+    if (imagingViewMode !== 'single') {
+      return
+    }
     if (selectedId == null || patientId == null || patientId === '') {
       setImageDetail(null)
       return
@@ -278,7 +407,51 @@ function ImagingTab({ patientId }) {
     return () => {
       cancelled = true
     }
-  }, [patientId, selectedId])
+  }, [patientId, selectedId, imagingViewMode])
+
+  useEffect(() => {
+    if (imagingViewMode !== 'compare' || patientId == null || patientId === '' || comparePrevId == null) {
+      setComparePrevDetail(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setComparePrevLoading(true)
+      try {
+        const d = await fetchPatientImage(patientId, comparePrevId)
+        if (!cancelled) setComparePrevDetail(d)
+      } catch {
+        if (!cancelled) setComparePrevDetail(null)
+      } finally {
+        if (!cancelled) setComparePrevLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [imagingViewMode, patientId, comparePrevId])
+
+  useEffect(() => {
+    if (imagingViewMode !== 'compare' || patientId == null || patientId === '' || compareRecentId == null) {
+      setCompareRecentDetail(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setCompareRecentLoading(true)
+      try {
+        const d = await fetchPatientImage(patientId, compareRecentId)
+        if (!cancelled) setCompareRecentDetail(d)
+      } catch {
+        if (!cancelled) setCompareRecentDetail(null)
+      } finally {
+        if (!cancelled) setCompareRecentLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [imagingViewMode, patientId, compareRecentId])
 
   useEffect(() => {
     if (!rows.length) {
@@ -333,12 +506,81 @@ function ImagingTab({ patientId }) {
     }
   }
 
+  const setViewMode = (m) => {
+    setActionError('')
+    setCompareResult(null)
+    if (m === 'single') {
+      setComparePrevId(null)
+      setCompareRecentId(null)
+    } else if (m === 'compare' && rows.length >= 2) {
+      const first = getImageRowId(rows[0])
+      const last = getImageRowId(rows[rows.length - 1])
+      let prevId = first
+      let recentId = last !== first ? last : getImageRowId(rows[1])
+      if (prevId === recentId) {
+        const other = rows.map((r) => getImageRowId(r)).find((id) => id != null && id !== prevId)
+        recentId = other ?? recentId
+      }
+      setComparePrevId(prevId)
+      setCompareRecentId(recentId)
+    } else if (m === 'compare') {
+      setComparePrevId(null)
+      setCompareRecentId(null)
+    }
+    setImagingViewMode(m)
+  }
+
+  const pickCompare = (side, id) => {
+    if (id == null) return
+    if (side === 'prev') {
+      if (id === compareRecentId) {
+        setActionError('이전·최근에 서로 다른 영상을 선택해 주세요.')
+        return
+      }
+      setComparePrevId(id)
+    } else {
+      if (id === comparePrevId) {
+        setActionError('이전·최근에 서로 다른 영상을 선택해 주세요.')
+        return
+      }
+      setCompareRecentId(id)
+    }
+    setActionError('')
+    setCompareResult(null)
+  }
+
+  const onCompareRun = async () => {
+    if (patientId == null || patientId === '' || comparePrevId == null || compareRecentId == null) return
+    setActionError('')
+    setCompareLoading(true)
+    try {
+      const out = await comparePatientImages(patientId, comparePrevId, compareRecentId)
+      setCompareResult(out)
+    } catch (e) {
+      setActionError(e.message || '비교 분석에 실패했습니다.')
+    } finally {
+      setCompareLoading(false)
+    }
+  }
+
   const previewSrc = toDataUrlFromDetail(imageDetail)
   const opinion = extractOpinion(imageDetail, opinionExtra)
   const typeKey = normalizeServerImageType(opinion.imageType ?? imageDetail?.imageType ?? uploadType)
   const conf = opinion.confidence
   const confTone = confidenceTone(conf)
   const confPct = Number.isFinite(conf) ? Math.min(100, Math.max(0, conf)) : null
+
+  const compareParsed = extractCompareResultData(compareResult)
+  const prevPreviewSrc = toDataUrlFromDetail(comparePrevDetail)
+  const recentPreviewSrc = toDataUrlFromDetail(compareRecentDetail)
+  const prevOpinionShort = buildOpinionShortSummary(comparePrevDetail)
+  const recentOpinionShort = buildOpinionShortSummary(compareRecentDetail)
+  const prevTypeKey = normalizeServerImageType(
+    extractOpinion(comparePrevDetail, null).imageType ?? comparePrevDetail?.imageType ?? 'xray',
+  )
+  const recentTypeKey = normalizeServerImageType(
+    extractOpinion(compareRecentDetail, null).imageType ?? compareRecentDetail?.imageType ?? 'xray',
+  )
 
   if (patientId == null || patientId === '') {
     return (
@@ -362,6 +604,23 @@ function ImagingTab({ patientId }) {
       ) : null}
 
       <p className="clinical-imaging-lead">서버에 저장된 영상을 불러오고, 업로드·AI 소견을 요청합니다.</p>
+
+      <div className="clinical-imaging-mode-row" role="tablist" aria-label="영상 보기 모드">
+        <button
+          type="button"
+          className={`clinical-imaging-mode-btn${imagingViewMode === 'single' ? ' active' : ''}`}
+          onClick={() => setViewMode('single')}
+        >
+          단일 영상 분석
+        </button>
+        <button
+          type="button"
+          className={`clinical-imaging-mode-btn${imagingViewMode === 'compare' ? ' active' : ''}`}
+          onClick={() => setViewMode('compare')}
+        >
+          영상 비교
+        </button>
+      </div>
 
       <div className="clinical-imaging-type-row" role="group" aria-label="업로드 시 영상 종류">
         {IMAGING_TYPE_OPTIONS.map((opt) => (
@@ -414,132 +673,270 @@ function ImagingTab({ patientId }) {
         }}
       />
 
-      <div className="clinical-imaging-timeline-wrap">
-        <div className="clinical-imaging-timeline-label">영상 타임라인 (날짜순)</div>
-        {listLoading ? (
-          <div className="clinical-imaging-timeline-loading">
-            <span className="spinner clinical-spinner" aria-hidden />
+      {imagingViewMode === 'single' ? (
+        <>
+          <div className="clinical-imaging-timeline-wrap">
+            <div className="clinical-imaging-timeline-label">영상 타임라인 (날짜순)</div>
+            {listLoading ? (
+              <div className="clinical-imaging-timeline-loading">
+                <span className="spinner clinical-spinner" aria-hidden />
+              </div>
+            ) : rows.length === 0 ? (
+              <p className="clinical-imaging-timeline-empty">등록된 영상이 없습니다. 위에서 업로드하세요.</p>
+            ) : (
+              <div className="clinical-imaging-timeline" role="list">
+                {rows.map((row, idx) => {
+                  const id = getImageRowId(row)
+                  const active = id != null && id === selectedId
+                  const thumb = timelineThumbSrc(row)
+                  const t = row?.createdAt ?? row?.uploadedAt ?? row?.created ?? row?.date
+                  return (
+                    <button
+                      key={id != null ? String(id) : `row-${idx}`}
+                      type="button"
+                      role="listitem"
+                      className={`clinical-imaging-timeline-item${active ? ' active' : ''}`}
+                      onClick={() => id != null && setSelectedId(id)}
+                    >
+                      {thumb ? (
+                        <img src={thumb} alt="" className="clinical-imaging-timeline-img" />
+                      ) : (
+                        <div className="clinical-imaging-timeline-placeholder" aria-hidden>
+                          ◧
+                        </div>
+                      )}
+                      <span className="clinical-imaging-timeline-date">{formatImagingDate(t)}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        ) : rows.length === 0 ? (
-          <p className="clinical-imaging-timeline-empty">등록된 영상이 없습니다. 위에서 업로드하세요.</p>
-        ) : (
-          <div className="clinical-imaging-timeline" role="list">
-            {rows.map((row, idx) => {
-              const id = getImageRowId(row)
-              const active = id != null && id === selectedId
-              const thumb = timelineThumbSrc(row)
-              const t = row?.createdAt ?? row?.uploadedAt ?? row?.created ?? row?.date
-              return (
-                <button
-                  key={id != null ? String(id) : `row-${idx}`}
-                  type="button"
-                  role="listitem"
-                  className={`clinical-imaging-timeline-item${active ? ' active' : ''}`}
-                  onClick={() => id != null && setSelectedId(id)}
-                >
-                  {thumb ? (
-                    <img src={thumb} alt="" className="clinical-imaging-timeline-img" />
-                  ) : (
-                    <div className="clinical-imaging-timeline-placeholder" aria-hidden>
-                      ◧
+
+          <div className="clinical-imaging-result-wrap">
+            {analyzeLoading ? (
+              <div className="clinical-imaging-analyze-overlay" role="status" aria-live="polite">
+                <span className="spinner clinical-spinner" aria-hidden />
+                <p>AI가 영상을 분석하고 있습니다…</p>
+              </div>
+            ) : null}
+
+            {detailLoading ? (
+              <div className="clinical-imaging-detail-loading">
+                <span className="spinner clinical-spinner" aria-hidden />
+                <span>영상을 불러오는 중…</span>
+              </div>
+            ) : detailError ? (
+              <div className="clinical-banner clinical-banner-error" role="alert">
+                {detailError}
+              </div>
+            ) : selectedId == null ? (
+              <p className="clinical-imaging-timeline-empty">표시할 영상이 없습니다.</p>
+            ) : (
+              <div className="clinical-imaging-result">
+                <div className="clinical-imaging-preview-col">
+                  <div className="clinical-imaging-preview-frame">
+                    {previewSrc ? (
+                      <img src={previewSrc} alt="선택한 영상" className="clinical-imaging-preview-img" />
+                    ) : (
+                      <div className="clinical-imaging-preview-empty">미리보기 데이터가 없습니다.</div>
+                    )}
+                  </div>
+                </div>
+                <div className="clinical-imaging-opinion-col">
+                  <header className="clinical-imaging-opinion-head">
+                    <h3 className="clinical-imaging-opinion-title">🔬 AI 영상 소견</h3>
+                    <div className="clinical-imaging-opinion-meta">
+                      <span className="clinical-imaging-type-badge">{imagingTypeLabel(typeKey)}</span>
+                      <span className="clinical-imaging-opinion-date">
+                        분석: {opinion.analyzedAt ? formatImagingDate(opinion.analyzedAt) : '—'}
+                      </span>
                     </div>
-                  )}
-                  <span className="clinical-imaging-timeline-date">{formatImagingDate(t)}</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
+                  </header>
 
-      <div className="clinical-imaging-result-wrap">
-        {analyzeLoading ? (
-          <div className="clinical-imaging-analyze-overlay" role="status" aria-live="polite">
-            <span className="spinner clinical-spinner" aria-hidden />
-            <p>AI가 영상을 분석하고 있습니다…</p>
-          </div>
-        ) : null}
+                  <section className="clinical-imaging-opinion-section">
+                    <h4>Findings</h4>
+                    <p>{opinion.findings || '—'}</p>
+                  </section>
+                  <section className="clinical-imaging-opinion-section">
+                    <h4>Impression</h4>
+                    <p>{opinion.impression || '—'}</p>
+                  </section>
+                  <section className="clinical-imaging-opinion-section">
+                    <h4>Recommendation</h4>
+                    <p>{opinion.recommendation || '—'}</p>
+                  </section>
 
-        {detailLoading ? (
-          <div className="clinical-imaging-detail-loading">
-            <span className="spinner clinical-spinner" aria-hidden />
-            <span>영상을 불러오는 중…</span>
+                  {confPct != null ? (
+                    <div className="clinical-imaging-confidence">
+                      <div className="clinical-imaging-confidence-label">
+                        <span>Confidence</span>
+                        <span>{Math.round(confPct)}%</span>
+                      </div>
+                      <div className="clinical-imaging-confidence-track">
+                        <div
+                          className={`clinical-imaging-confidence-fill clinical-imaging-confidence-${confTone}`}
+                          style={{ width: `${confPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <p className="clinical-imaging-disclaimer">
+                    ⚠️ 본 소견은 AI 보조 도구로 생성되었습니다. 최종 판독 및 진단은 반드시 전문의가 확인해야 합니다. (식약처
+                    SaMD 가이드라인 준수)
+                  </p>
+
+                  <div className="clinical-imaging-actions">
+                    <button
+                      type="button"
+                      className="clinical-btn clinical-btn-ai"
+                      disabled={analyzeLoading || detailLoading}
+                      onClick={() => void onAnalyze()}
+                    >
+                      AI 소견 생성
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        ) : detailError ? (
-          <div className="clinical-banner clinical-banner-error" role="alert">
-            {detailError}
+        </>
+      ) : (
+        <>
+          {rows.length < 2 ? (
+            <p className="clinical-imaging-compare-notice" role="status">
+              비교하려면 영상이 2개 이상 필요합니다.
+            </p>
+          ) : null}
+
+          <div className="clinical-imaging-compare-select">
+            <div className="clinical-imaging-compare-side">
+              <div className="clinical-imaging-compare-side-head">이전 영상 선택</div>
+              {renderCompareTimeline(
+                rows,
+                comparePrevId,
+                compareRecentId,
+                (id) => pickCompare('prev', id),
+                listLoading,
+              )}
+            </div>
+            <div className="clinical-imaging-compare-side">
+              <div className="clinical-imaging-compare-side-head">최근 영상 선택</div>
+              {renderCompareTimeline(
+                rows,
+                compareRecentId,
+                comparePrevId,
+                (id) => pickCompare('recent', id),
+                listLoading,
+              )}
+            </div>
           </div>
-        ) : selectedId == null ? (
-          <p className="clinical-imaging-timeline-empty">표시할 영상이 없습니다.</p>
-        ) : (
-          <div className="clinical-imaging-result">
-            <div className="clinical-imaging-preview-col">
-              <div className="clinical-imaging-preview-frame">
-                {previewSrc ? (
-                  <img src={previewSrc} alt="선택한 영상" className="clinical-imaging-preview-img" />
+
+          <div className="clinical-imaging-compare-panels">
+            <div className="clinical-imaging-compare-panel">
+              <div className="clinical-imaging-preview-frame clinical-imaging-compare-preview">
+                {comparePrevLoading ? (
+                  <div className="clinical-imaging-preview-empty">
+                    <span className="spinner clinical-spinner" aria-hidden /> 불러오는 중…
+                  </div>
+                ) : prevPreviewSrc ? (
+                  <img src={prevPreviewSrc} alt="이전 영상" className="clinical-imaging-preview-img" />
                 ) : (
-                  <div className="clinical-imaging-preview-empty">미리보기 데이터가 없습니다.</div>
+                  <div className="clinical-imaging-preview-empty">영상을 선택하세요</div>
                 )}
               </div>
+              <div className="clinical-imaging-compare-meta">
+                <span className="clinical-imaging-type-badge">{imagingTypeLabel(prevTypeKey)}</span>
+                <span className="clinical-imaging-opinion-date">
+                  {comparePrevId
+                    ? formatImagingDate(rowDisplayDate(rows.find((r) => getImageRowId(r) === comparePrevId)))
+                    : '—'}
+                </span>
+              </div>
+              <div className="clinical-imaging-compare-ai-box">
+                <div className="clinical-imaging-compare-ai-title">AI 소견 요약</div>
+                <p className="clinical-imaging-compare-ai-text">
+                  {prevOpinionShort ||
+                    '저장된 소견이 없습니다. 단일 분석에서 AI 소견을 생성하면 여기에 반영됩니다.'}
+                </p>
+              </div>
             </div>
-            <div className="clinical-imaging-opinion-col">
-              <header className="clinical-imaging-opinion-head">
-                <h3 className="clinical-imaging-opinion-title">🔬 AI 영상 소견</h3>
-                <div className="clinical-imaging-opinion-meta">
-                  <span className="clinical-imaging-type-badge">{imagingTypeLabel(typeKey)}</span>
-                  <span className="clinical-imaging-opinion-date">
-                    분석: {opinion.analyzedAt ? formatImagingDate(opinion.analyzedAt) : '—'}
-                  </span>
-                </div>
-              </header>
-
-              <section className="clinical-imaging-opinion-section">
-                <h4>Findings</h4>
-                <p>{opinion.findings || '—'}</p>
-              </section>
-              <section className="clinical-imaging-opinion-section">
-                <h4>Impression</h4>
-                <p>{opinion.impression || '—'}</p>
-              </section>
-              <section className="clinical-imaging-opinion-section">
-                <h4>Recommendation</h4>
-                <p>{opinion.recommendation || '—'}</p>
-              </section>
-
-              {confPct != null ? (
-                <div className="clinical-imaging-confidence">
-                  <div className="clinical-imaging-confidence-label">
-                    <span>Confidence</span>
-                    <span>{Math.round(confPct)}%</span>
+            <div className="clinical-imaging-compare-panel">
+              <div className="clinical-imaging-preview-frame clinical-imaging-compare-preview">
+                {compareRecentLoading ? (
+                  <div className="clinical-imaging-preview-empty">
+                    <span className="spinner clinical-spinner" aria-hidden /> 불러오는 중…
                   </div>
-                  <div className="clinical-imaging-confidence-track">
-                    <div
-                      className={`clinical-imaging-confidence-fill clinical-imaging-confidence-${confTone}`}
-                      style={{ width: `${confPct}%` }}
-                    />
-                  </div>
-                </div>
-              ) : null}
-
-              <p className="clinical-imaging-disclaimer">
-                ⚠️ 본 소견은 AI 보조 도구로 생성되었습니다. 최종 판독 및 진단은 반드시 전문의가 확인해야 합니다. (식약처
-                SaMD 가이드라인 준수)
-              </p>
-
-              <div className="clinical-imaging-actions">
-                <button
-                  type="button"
-                  className="clinical-btn clinical-btn-ai"
-                  disabled={analyzeLoading || detailLoading}
-                  onClick={() => void onAnalyze()}
-                >
-                  AI 소견 생성
-                </button>
+                ) : recentPreviewSrc ? (
+                  <img src={recentPreviewSrc} alt="최근 영상" className="clinical-imaging-preview-img" />
+                ) : (
+                  <div className="clinical-imaging-preview-empty">영상을 선택하세요</div>
+                )}
+              </div>
+              <div className="clinical-imaging-compare-meta">
+                <span className="clinical-imaging-type-badge">{imagingTypeLabel(recentTypeKey)}</span>
+                <span className="clinical-imaging-opinion-date">
+                  {compareRecentId
+                    ? formatImagingDate(rowDisplayDate(rows.find((r) => getImageRowId(r) === compareRecentId)))
+                    : '—'}
+                </span>
+              </div>
+              <div className="clinical-imaging-compare-ai-box">
+                <div className="clinical-imaging-compare-ai-title">AI 소견 요약</div>
+                <p className="clinical-imaging-compare-ai-text">
+                  {recentOpinionShort ||
+                    '저장된 소견이 없습니다. 단일 분석에서 AI 소견을 생성하면 여기에 반영됩니다.'}
+                </p>
               </div>
             </div>
           </div>
-        )}
-      </div>
+
+          <div className="clinical-imaging-compare-run-wrap">
+            <button
+              type="button"
+              className="clinical-btn clinical-btn-ai clinical-imaging-compare-run-btn"
+              disabled={
+                compareLoading || rows.length < 2 || comparePrevId == null || compareRecentId == null
+              }
+              onClick={() => void onCompareRun()}
+            >
+              변화 분석 생성
+            </button>
+          </div>
+
+          <div className="clinical-imaging-compare-result-wrap">
+            <div className="clinical-imaging-compare-result-inner">
+              {compareLoading ? (
+                <div className="clinical-imaging-compare-overlay" role="status" aria-live="polite">
+                  <span className="spinner clinical-spinner" aria-hidden />
+                  <p>AI가 두 영상의 변화를 분석하고 있습니다…</p>
+                </div>
+              ) : null}
+              <h3 className="clinical-imaging-compare-result-title">🔄 변화 분석 결과</h3>
+              <p className="clinical-imaging-compare-result-summary">
+                {compareParsed.summary ||
+                  (compareResult ? '—' : '「변화 분석 생성」을 누르면 결과가 표시됩니다.')}
+              </p>
+              {compareParsed.badges.length > 0 ? (
+                <div className="clinical-imaging-compare-badges">
+                  {compareParsed.badges.map((b) => (
+                    <span
+                      key={b.key}
+                      className={`clinical-imaging-trend-badge clinical-imaging-trend-${b.key}`}
+                    >
+                      {b.label}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              <p className="clinical-imaging-disclaimer">
+                ⚠️ 본 비교 소견은 AI 보조 도구로 생성되었습니다. 최종 판독 및 진단은 반드시 전문의가 확인해야 합니다.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
